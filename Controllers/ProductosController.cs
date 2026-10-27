@@ -1,6 +1,7 @@
 
 using Microsoft.AspNetCore.Mvc;
-using TiendaAPI.Services;
+using Microsoft.EntityFrameworkCore;
+using TiendaAPI.Data;
 using TiendaAPI.Models;
 
 namespace TiendaAPI.Controllers;
@@ -9,27 +10,123 @@ namespace TiendaAPI.Controllers;
 [Route("api/[controller]")]
 public class ProductosController : ControllerBase
 {
-    private readonly ProductoService _productoService;
+    private readonly TiendaDbContext _context;
 
-    public ProductosController(ProductoService productoService)
+    public ProductosController(TiendaDbContext context)
     {
-        _productoService = productoService;
+        _context = context;
     }
 
     // GET: api/productos
-    [HttpGet]
-    public async Task<IActionResult> ObtenerProductos()
-    {
-        var productos = await _productoService.ObtenerProductos();
 
-        return Ok(productos);
+[HttpGet]
+public async Task<IActionResult> ObtenerProductos()
+{
+    var productos = await _context.Productos
+        .AsNoTracking()
+        .Select(p => new
+        {
+            p.Id,
+            p.Nombre,
+            p.Descripcion,
+            p.Precio,
+            p.Stock,
+            p.Imagen,
+            p.Activo,
+            p.CategoriaId,
+            Categoria = p.Categoria == null
+                ? null
+                : new
+                {
+                    p.Categoria.Id,
+                    p.Categoria.Nombre,
+                    p.Categoria.Descripcion,
+                    p.Categoria.Activo
+                }
+        })
+        .ToListAsync();
+
+    return Ok(productos);
+}
+
+    // GET: api/productos/1
+[HttpGet("{id:int}")]
+public async Task<IActionResult> ObtenerProducto(int id)
+{
+    var producto = await _context.Productos
+        .Include(p => p.Categoria)
+        .AsNoTracking()
+        .FirstOrDefaultAsync(p => p.Id == id);
+
+    if (producto == null)
+    {
+        return NotFound(new
+        {
+            mensaje = "Producto no encontrado"
+        });
     }
 
-    // GET: api/productos/{id}
-    [HttpGet("{id}")]
-    public async Task<IActionResult> ObtenerProducto(string id)
+    return Ok(producto);
+}
+
+    // POST: api/productos
+    [HttpPost]
+    public async Task<IActionResult> CrearProducto(
+        [FromBody] CrearProductoRequest solicitud)
     {
-        var producto = await _productoService.ObtenerProducto(id);
+        if (solicitud.CategoriaId.HasValue)
+{
+    var categoriaExiste = await _context.Categorias
+        .AnyAsync(c => c.Id == solicitud.CategoriaId.Value);
+
+    if (!categoriaExiste)
+    {
+        return BadRequest(new
+        {
+            mensaje = "La categoría indicada no existe"
+        });
+    }
+}
+        var producto = new Producto
+        {
+            Nombre = solicitud.Nombre,
+            Descripcion = solicitud.Descripcion,
+            Precio = solicitud.Precio,
+            Stock = solicitud.Stock,
+            Activo = solicitud.Activo,
+            CategoriaId = solicitud.CategoriaId
+        };
+
+        _context.Productos.Add(producto);
+        await _context.SaveChangesAsync();
+
+        return CreatedAtAction(
+            nameof(ObtenerProducto),
+            new { id = producto.Id },
+            producto
+        );
+    }
+
+    // PUT: api/productos/{id}
+    [HttpPut("{id:int}")]
+    public async Task<IActionResult> ActualizarProducto(
+        int id,
+        [FromBody] CrearProductoRequest solicitud)
+    {
+        if (solicitud.CategoriaId.HasValue)
+{
+    var categoriaExiste = await _context.Categorias
+        .AnyAsync(c => c.Id == solicitud.CategoriaId.Value);
+
+    if (!categoriaExiste)
+    {
+        return BadRequest(new
+        {
+            mensaje = "La categoría indicada no existe"
+        });
+    }
+}
+        var producto = await _context.Productos.FindAsync(id);
 
         if (producto == null)
         {
@@ -39,116 +136,39 @@ public class ProductosController : ControllerBase
             });
         }
 
+        producto.Nombre = solicitud.Nombre;
+        producto.Descripcion = solicitud.Descripcion;
+        producto.Precio = solicitud.Precio;
+        producto.Stock = solicitud.Stock;
+        producto.Activo = solicitud.Activo;
+
+        await _context.SaveChangesAsync();
+
         return Ok(producto);
+        
     }
 
-    // GET: api/productos/probar-auth
-    [HttpGet("probar-auth")]
-    public async Task<IActionResult> ProbarAuth(
-        [FromServices] PocketBaseAuthService authService)
+    // DELETE: api/productos/{id}
+    [HttpDelete("{id:int}")]
+    public async Task<IActionResult> EliminarProducto(int id)
     {
-        try
-        {
-            await authService.ObtenerToken();
+        var producto = await _context.Productos.FindAsync(id);
 
-            return Ok(new
-            {
-                autenticado = true,
-                mensaje = "La API se autenticó correctamente con PocketBase"
-            });
-        }
-        catch
-        {
-            return StatusCode(500, new
-            {
-                autenticado = false,
-                mensaje = "No se pudo autenticar con PocketBase"
-            });
-        }
-    }
-
-    // POST: api/productos
-    [HttpPost]
-    public async Task<IActionResult> CrearProducto(
-        [FromBody] CrearProductoRequest producto,
-        [FromServices] PocketBaseAuthService authService)
-    {
-        var token = await authService.ObtenerToken();
-
-        var nuevoProducto =
-            await _productoService.CrearProducto(producto, token);
-
-        if (nuevoProducto == null)
-        {
-            return StatusCode(500, new
-            {
-                mensaje = "No se pudo crear el producto"
-            });
-        }
-
-        return CreatedAtAction(
-            nameof(ObtenerProducto),
-            new { id = nuevoProducto.Id },
-            nuevoProducto
-        );
-    }
-
-    // PUT: api/productos/{id}
-    [HttpPut("{id}")]
-    public async Task<IActionResult> ActualizarProducto(
-        string id,
-        [FromBody] CrearProductoRequest producto,
-        [FromServices] PocketBaseAuthService authService)
-    {
-        var token = await authService.ObtenerToken();
-
-        var actualizado = await _productoService.ActualizarProducto(
-            id,
-            producto,
-            token
-        );
-
-        if (actualizado == null)
+        if (producto == null)
         {
             return NotFound(new
             {
-                mensaje = "No se pudo actualizar el producto o no existe"
+                mensaje = "Producto no encontrado"
             });
         }
 
-        return Ok(actualizado);
-    }
-
-
-    // DELETE: api/productos/{id}
-    [HttpDelete("{id}")]
-    public async Task<IActionResult> EliminarProducto(
-        string id,
-        [FromServices] PocketBaseAuthService authService)
-    {
-        var token = await authService.ObtenerToken();
-
-        var eliminado = await _productoService.EliminarProducto(
-            id,
-            token
-        );
-
-        if (!eliminado)
-        {
-            return StatusCode(502, new
-            {
-                mensaje = "No se pudo eliminar el producto en PocketBase"
-            });
-        }
+        _context.Productos.Remove(producto);
+        await _context.SaveChangesAsync();
 
         return Ok(new
         {
             mensaje = "Producto eliminado correctamente",
-            id = id
+            id
         });
     }
-
-
 }
-
-

@@ -12,8 +12,7 @@ public class CrearProductoRequest
     [StringLength(500, ErrorMessage = "La descripción no puede superar los 500 caracteres")]
     public string Descripcion { get; set; } = "";
 
-    [Range(typeof(decimal), "0.01", "999999999",
-        ErrorMessage = "El precio debe ser mayor que cero")]
+    [PrecioValido(ErrorMessage = "El precio debe ser mayor que cero")]
     public decimal Precio { get; set; }
 
     [Range(0, 1000000,
@@ -21,8 +20,18 @@ public class CrearProductoRequest
     public int Stock { get; set; }
 
     public bool Activo { get; set; } = true;
-
+    public int? CategoriaId { get; set; }
     public bool TieneNombreValido =>
-    !string.IsNullOrWhiteSpace(Nombre);
+        !string.IsNullOrWhiteSpace(Nombre);
+}
 
+public class PrecioValidoAttribute : ValidationAttribute
+{
+    public override bool IsValid(object? value)
+    {
+        if (value is not decimal precio)
+            return false;
+
+        return precio > 0 && precio <= 999999999;
+    }
 }

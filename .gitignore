@@ -1,0 +1,9 @@
+# Archivos de compilación de .NET
+bin/
+obj/
+
+# Archivos locales y datos
+data/
+
+# Configuración local con posibles credenciales
+appsettings.Development.json
